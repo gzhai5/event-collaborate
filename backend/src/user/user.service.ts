@@ -23,8 +23,8 @@ export class UserService {
     return this.userRepository.find();
   }
 
-  async findOne(id: number) {
-    const userData = await this.userRepository.findOneBy({ id: id.toString() });
+  async findOne(id: string) {
+    const userData = await this.userRepository.findOneBy({ id });
     if (!userData) {
       this.logger.error(`User with ID ${id} not found.`);
       throw new HttpException('User not found', 404);
@@ -32,9 +32,9 @@ export class UserService {
     return userData;
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto) {
+  async update(id: string, updateUserDto: UpdateUserDto) {
     const existingUser = await this.userRepository.findOneBy({
-      id: id.toString(),
+      id: id,
     });
     if (!existingUser) {
       this.logger.error(`User with ID ${id} not found for update.`);
@@ -44,7 +44,7 @@ export class UserService {
     return await this.userRepository.save(userData);
   }
 
-  async remove(id: number) {
+  async remove(id: string) {
     const existingUser = await this.findOne(id);
     return await this.userRepository.remove(existingUser);
   }
