@@ -27,27 +27,27 @@ export class EventController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.eventService.findOne(+id);
+    return this.eventService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateEventDto: UpdateEventDto) {
-    return this.eventService.update(+id, updateEventDto);
+    return this.eventService.update(id, updateEventDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.eventService.remove(+id);
+    return this.eventService.remove(id);
   }
 
   @Post('/merge-all/:userId')
   mergeAllEvents(@Param('userId') userId: string) {
-    return this.eventService.mergeAllEvents(+userId);
+    return this.eventService.mergeAllEvents(userId);
   }
 
   @Get('/conflicts/:userId')
   getConflictingEvents(@Param('userId') userId: string) {
-    return this.eventService.getConflictingEvents(+userId);
+    return this.eventService.getConflictingEvents(userId);
   }
 
   @Post('batch')

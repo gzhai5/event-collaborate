@@ -39,7 +39,11 @@ export class EventEntity {
   @ManyToMany(() => UserEntity, (user) => user.events, {
     cascade: true,
   })
-  @JoinTable()
+  @JoinTable({
+    name: 'event_invitees',
+    joinColumn: { name: 'eventId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'userId', referencedColumnName: 'id' },
+  })
   invitees: UserEntity[];
 
   @CreateDateColumn()

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpException, Injectable } from '@nestjs/common';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -27,18 +28,30 @@ export class EventService {
     private readonly dataSource: DataSource,
   ) {}
 
-  create(createEventDto: CreateEventDto): Promise<EventEntity> {
-    const eventData = this.eventRepository.create(createEventDto);
-    return this.eventRepository.save(eventData);
+  async create(createEventDto: CreateEventDto): Promise<EventEntity> {
+    const userIds = createEventDto.inviteeIds;
+    if (!userIds || userIds.length === 0) {
+      throw new HttpException(
+        'At least one inviteeId is required to create an event',
+        400,
+      );
+    }
+
+    const users = await this.userRepository.findBy({ id: In(userIds) });
+    const eventData = this.eventRepository.create({
+      ...createEventDto,
+      invitees: users,
+    });
+    return await this.eventRepository.save(eventData);
   }
 
   findAll() {
     return this.eventRepository.find();
   }
 
-  async findOne(id: number) {
+  async findOne(id: string) {
     const eventData = await this.eventRepository.findOneBy({
-      id: id.toString(),
+      id: id,
     });
     if (!eventData) {
       this.logger.error(`Event with ID ${id} not found.`);
@@ -47,9 +60,9 @@ export class EventService {
     return eventData;
   }
 
-  async update(id: number, updateEventDto: UpdateEventDto) {
+  async update(id: string, updateEventDto: UpdateEventDto) {
     const existingEvent = await this.eventRepository.findOneBy({
-      id: id.toString(),
+      id: id,
     });
     if (!existingEvent) {
       this.logger.error(`Event with ID ${id} not found for update.`);
@@ -59,15 +72,15 @@ export class EventService {
     return await this.eventRepository.save(eventData);
   }
 
-  async remove(id: number) {
+  async remove(id: string) {
     const existingEvent = await this.findOne(id);
     return await this.eventRepository.remove(existingEvent);
   }
 
-  async mergeAllEvents(userId: number) {
+  async mergeAllEvents(userId: string) {
     this.logger.log(`Merging all events for user ID ${userId}`);
     const user = await this.userRepository.findOne({
-      where: { id: userId.toString() },
+      where: { id: userId },
       relations: ['events'],
     });
     if (!user) {
@@ -75,30 +88,54 @@ export class EventService {
       throw new HttpException('User not found', 404);
     }
 
-    const events = [...(user.events || [])];
-    if (events.length < 2) {
-      this.logger.log(`Not enough events to merge for user ID ${userId}.`);
-      return events || [];
+    const oldEvents = [...(user.events || [])];
+    const eventsLenBefore = oldEvents.length;
+    if (oldEvents.length < 2) {
+      this.logger.log(
+        `Not enough events to merge for user ID ${userId}. Just ${eventsLenBefore} event(s).`,
+      );
+      return oldEvents || [];
     }
 
     // Merge Overlapping Events
+    const events = structuredClone(
+      oldEvents.map(
+        (e) =>
+          ({
+            id: e.id,
+            title: e.title,
+            description: e.description,
+            status: e.status,
+            startTime: e.startTime,
+            endTime: e.endTime,
+            mergedFrom: e.mergedFrom,
+            createdAt: e.createdAt,
+            updatedAt: e.updatedAt,
+            aiSummary: e.aiSummary,
+          }) as EventEntity,
+      ),
+    );
     const sortedEvents = events.sort(
-      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+      (a, b) =>
+        new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
     );
     let prev = sortedEvents[0];
     const merged: EventEntity[] = [];
     const auditLogs: AuditLogEntity[] = [];
     for (let i = 1; i < sortedEvents.length; i++) {
       if (prev.endTime >= sortedEvents[i].startTime) {
-        // when finding overlap
+        // mark prev as “merged” the first time
+        if (!prev.mergedFrom || prev.mergedFrom.length === 0) {
+          prev.mergedFrom = [prev.id];
+        }
+        prev.mergedFrom.push(sortedEvents[i].id);
+
         prev.endTime = new Date(
           Math.max(prev.endTime.getTime(), sortedEvents[i].endTime.getTime()),
         );
-        prev.mergedFrom = [...(prev.mergedFrom || []), sortedEvents[i].id];
         prev.title += `&${sortedEvents[i].title}`;
         prev.status = sortedEvents[i].status;
 
-        // audit log the merge action
         auditLogs.push(
           this.auditLogRepository.create({
             oldEventId: sortedEvents[i].id,
@@ -116,8 +153,8 @@ export class EventService {
 
     // AI summary for merged events
     for (const mergedEvent of merged) {
-      if (mergedEvent.mergedFrom && mergedEvent.mergedFrom.length > 1) {
-        const sourceEvents = events.filter((e) =>
+      if (mergedEvent.mergedFrom && mergedEvent.mergedFrom.length >= 2) {
+        const sourceEvents = oldEvents.filter((e) =>
           mergedEvent.mergedFrom!.includes(e.id),
         );
 
@@ -140,13 +177,16 @@ export class EventService {
         `Created ${auditLogs.length} audit log entries for merged events.`,
       );
     }
+    this.logger.log(
+      `Finish Merging ${eventsLenBefore} events into ${merged.length} events for user ID ${userId}.`,
+    );
     return merged;
   }
 
-  async getConflictingEvents(userId: number) {
+  async getConflictingEvents(userId: string) {
     this.logger.log(`Retrieving conflicting events for user ID ${userId}`);
     const user = await this.userRepository.findOne({
-      where: { id: userId.toString() },
+      where: { id: userId },
       relations: ['events'],
     });
     if (!user) {
@@ -157,7 +197,7 @@ export class EventService {
     const events = [...(user.events || [])];
     if (events.length < 2) {
       this.logger.log(
-        `Not enough events to have conflicts for user ID ${userId}.`,
+        `Not enough events to have conflicts for user ID ${userId}. Just ${events.length} event(s).`,
       );
       return events || [];
     }
@@ -180,7 +220,7 @@ export class EventService {
       conflictEventIds.has(event.id),
     );
     this.logger.log(
-      `Found ${conflictingEvents.length} conflicting events for user ID ${userId}.`,
+      `Found ${conflictingEvents.length} conflicting events from ${events.length} events for user ID ${userId}.`,
     );
     return conflictingEvents;
   }

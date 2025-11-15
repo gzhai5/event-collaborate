@@ -1,4 +1,4 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, ManyToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { EventEntity } from 'src/event/entities/event.entity';
 
 @Entity('user')
@@ -12,6 +12,6 @@ export class UserEntity {
   @Column({ type: 'varchar', unique: true, nullable: false })
   email: string;
 
-  @OneToMany(() => EventEntity, (event) => event.invitees)
+  @ManyToMany(() => EventEntity, (event) => event.invitees)
   events: EventEntity[];
 }
