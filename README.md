@@ -63,25 +63,9 @@ npm run test
 AI is mostly used for learning some basic set up/how to write test code on Nest.JS server and Debugging the code in Part 3&4 for improving the coding speed to finish the project. AI is also used to polish the styling for the readme file.
 
 # 🔁 Reasoning About the Merge Algorithm
-1. Fetch all user events
+The merge process retrieves all events for a user, sorts them by startTime, and then scans through them chronologically. A sliding window (prev) is used to track the currently active event block. For each next event, the system checks whether it overlaps with the current window (prev.endTime >= current.startTime). If they overlap, the events are merged by extending the end time to the latest end, combining titles, updating status, and appending the source event IDs into mergedFrom. An audit log entry is created for every merge operation.
 
-2. Sort by startTime
+If the next event does not overlap, the system concludes the current window and pushes prev into the merged result list, then shifts the window to the new event. After the loop finishes, the final prev window is also added to the results.
 
-3. Maintain a sliding “current merge window” (prev)
-
-4. For each event:
-
-5. Check if Overlap? (prev.end >= current.start)
-
-6. Extend prev.end
-
-7. Append current.id to prev.mergedFrom
-
-8. Merge titles & preserve status
-
-9. No overlap: push prev
-
-10. Push last prev since it is still unhandled
-
-11. Save merged results + audit logs
+For any merged event produced from multiple originals, an AI summary is generated using the titles/IDs of the source events. Finally, the merged events replace the user’s event list in the database, and all audit logs are persisted. This results in a clean, non-overlapping timeline while fully preserving merge history.
 
