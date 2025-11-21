@@ -138,10 +138,12 @@ export class EventService {
 
     // AI summary for merged events
     for (const mergedEvent of merged) {
-      const mergedIds = mergedEvent.mergedFrom ?? [];
-      if (mergedIds.length < 2) continue;
+      const mergedFromIds = mergedEvent.mergedFrom ?? [];
+      if (mergedFromIds.length === 0) continue;
 
-      const sourceEvents = oldEvents.filter((e) => mergedIds.includes(e.id));
+      // Source events = survivor itself + all merged-from events
+      const sourceIdSet = new Set<string>([mergedEvent.id, ...mergedFromIds]);
+      const sourceEvents = oldEvents.filter((e) => sourceIdSet.has(e.id));
 
       const summary = await this.aiService.summarizeMergedEvent(
         mergedEvent,
