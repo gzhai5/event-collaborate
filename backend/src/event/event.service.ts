@@ -98,50 +98,35 @@ export class EventService {
     }
 
     // Merge Overlapping Events
-    const events = structuredClone(
-      oldEvents.map(
-        (e) =>
-          ({
-            id: e.id,
-            title: e.title,
-            description: e.description,
-            status: e.status,
-            startTime: e.startTime,
-            endTime: e.endTime,
-            mergedFrom: e.mergedFrom,
-            createdAt: e.createdAt,
-            updatedAt: e.updatedAt,
-            aiSummary: e.aiSummary,
-          }) as EventEntity,
-      ),
-    );
-    const sortedEvents = events.sort(
-      (a, b) =>
-        new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+    const sortedEvents = [...oldEvents].sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
     );
     let prev = sortedEvents[0];
     const merged: EventEntity[] = [];
     const auditLogs: AuditLogEntity[] = [];
     for (let i = 1; i < sortedEvents.length; i++) {
-      if (prev.endTime >= sortedEvents[i].startTime) {
-        // mark prev as “merged” the first time
-        if (!prev.mergedFrom || prev.mergedFrom.length === 0) {
-          prev.mergedFrom = [prev.id];
+      const current = sortedEvents[i];
+
+      if (prev.endTime >= current.startTime) {
+        if (!prev.mergedFrom) {
+          prev.mergedFrom = [];
         }
-        prev.mergedFrom.push(sortedEvents[i].id);
+        if (!prev.mergedFrom.includes(current.id)) {
+          prev.mergedFrom.push(current.id);
+        }
 
         prev.endTime = new Date(
-          Math.max(prev.endTime.getTime(), sortedEvents[i].endTime.getTime()),
+          Math.max(prev.endTime.getTime(), current.endTime.getTime()),
         );
-        prev.title += `&${sortedEvents[i].title}`;
-        prev.status = sortedEvents[i].status;
+        prev.title += `&${current.title}`;
+        prev.status = current.status;
 
         auditLogs.push(
           this.auditLogRepository.create({
-            oldEventId: sortedEvents[i].id,
+            oldEventId: current.id,
             newEventId: prev.id,
             action: EventAction.MERGE,
-            userId: userId.toString(),
+            userId: userId,
           }),
         );
       } else {
@@ -153,22 +138,31 @@ export class EventService {
 
     // AI summary for merged events
     for (const mergedEvent of merged) {
-      if (mergedEvent.mergedFrom && mergedEvent.mergedFrom.length >= 2) {
-        const sourceEvents = oldEvents.filter((e) =>
-          mergedEvent.mergedFrom!.includes(e.id),
-        );
+      const mergedIds = mergedEvent.mergedFrom ?? [];
+      if (mergedIds.length < 2) continue;
 
-        const summary = await this.aiService.summarizeMergedEvent(
-          mergedEvent,
-          sourceEvents.map((e) => ({ id: e.id, title: e.title })),
-        );
-        mergedEvent.aiSummary = summary;
-      }
+      const sourceEvents = oldEvents.filter((e) => mergedIds.includes(e.id));
+
+      const summary = await this.aiService.summarizeMergedEvent(
+        mergedEvent,
+        sourceEvents.map((e) => ({ id: e.id, title: e.title })),
+      );
+      mergedEvent.aiSummary = summary;
     }
 
-    // Update user entities with merged events
-    user.events = merged;
-    await this.userRepository.save(user);
+    // Persist merged event updates
+    await this.eventRepository.save(merged);
+
+    // 2) Delete events that have been merged into others (so they don't show up anymore)
+    const mergedIdSet = new Set(merged.map((e) => e.id));
+    const eventsToRemove = oldEvents.filter((e) => !mergedIdSet.has(e.id));
+
+    if (eventsToRemove.length > 0) {
+      await this.eventRepository.remove(eventsToRemove);
+      this.logger.log(
+        `Removed ${eventsToRemove.length} merged-away events for user ID ${userId}.`,
+      );
+    }
 
     // Save audit logs
     if (auditLogs.length > 0) {
@@ -199,7 +193,7 @@ export class EventService {
       this.logger.log(
         `Not enough events to have conflicts for user ID ${userId}. Just ${events.length} event(s).`,
       );
-      return events || [];
+      return [];
     }
 
     // Find all Overlapping Events
