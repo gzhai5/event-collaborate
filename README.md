@@ -6,8 +6,7 @@ This project includes:
 - User + Event CRUD  
 - Efficient **batch event creation** (500+ events under 2s)  
 - Automatic event **merge detection**  
-- AI-generated summaries using **LangChain + OpenAI**  
-- Background job worker via **BullMQ**  
+- AI-generated summaries using **LangChain + OpenAI**
 - Audit logging for merge operations  
 
 ---
